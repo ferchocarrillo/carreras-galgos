@@ -1,0 +1,10 @@
+# Ignora videos y configuraciones del sistema
+*.log
+*.mp4
+*.avi
+*.mov
+.DS_Store
+Thumbs.db
+node_modules/
+.env
+/public/videos/
