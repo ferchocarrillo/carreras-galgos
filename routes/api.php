@@ -16,3 +16,4 @@ Route::get('/user', function (Request $request) {
 
     Route::get('/carreras/{carrera_id}/detalles', [CarreraController::class, 'obtenerDetallesCarrera'])
         ->name('api.carreras.detalles'); // Agregué un nombre de ruta para consistencia
+    Route::get('/api/carrera-activa', [CarreraController::class, 'carreraActiva']);

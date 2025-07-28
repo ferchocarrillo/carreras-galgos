@@ -97,6 +97,13 @@ class CarreraController extends Controller
         }
     }
 
+        public function carreraActiva()
+        {
+            $carrera = \App\Models\Carrera::orderBy('id', 'asc')->first(); // O de otra forma fija
+            return response()->json($carrera);
+        }
+
+
     /**
      * Show the form for creating a new resource.
      */

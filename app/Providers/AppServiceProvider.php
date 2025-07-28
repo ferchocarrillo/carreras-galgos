@@ -3,7 +3,9 @@
 namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Facades\Route; // Añade esta línea
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\View;
+use App\Models\Carrera;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -12,7 +14,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // ... (tu código existente en register)
+        //
     }
 
     /**
@@ -20,6 +22,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        View::composer(['carreras.*', 'banca.*'], function ($view) {
+            $carreraId = Cache::get('carrera_actual_id');
 
+            // Si no hay una carrera definida, escoge una por defecto (ej: la primera)
+            $proximaCarrera = $carreraId ? Carrera::find($carreraId) : Carrera::first();
+
+            $view->with('proximaCarrera', $proximaCarrera);
+        });
     }
 }

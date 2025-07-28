@@ -607,28 +607,13 @@ html, body {
 </style>
 
 </head>
-<body>
+<body data-vista="principal">
 <div class="video-fondo">
     <video id="fondo-video" autoplay loop muted playsinline>
         <source src="assets/otros/background_video.mp4" type="video/mp4">
         Tu navegador no soporta la reproducción de video.
     </video>
 </div>
-{{-- <svg viewBox="0 0 1200 600">
-  <g class="notoffen roll" style="animation-delay: 250ms;">
-    <polygon points="728.677 215.373 691.632 279.539 798.844 279.539 835.889 215.373 728.677 215.373" fill="#4CAF50"/>
-  </g>
-  <g class="offen rollback" style="animation-delay: 270ms;">
-    <polygon points="825.284 111.125 999.465 111.125 1045.402 31.558 871.221 31.558 825.284 111.125" fill="#2196F3"/>
-  </g>
-  <g class="offen rollback" style="animation-delay: 450ms;">
-    <polygon points="900.437 279.539 1009.198 279.539 1055.136 199.972 946.375 199.972 900.437 279.539" fill="#FF5722"/>
-  </g>
-</svg> --}}
-{{-- <div class="card-top">
-    <h2>Próximas Carreras</h2>
-</div> --}}
-
 <div class="main-content-wrapper">
     <div class="card-i">
         <h2 >Próxima Carrera</h2>
@@ -655,7 +640,7 @@ html, body {
         <h2 id="siguiente-carrera-titulo">Siguiente Carrera</h2>
         <div id="temporizador-container">
         <span class="texto-fijo">EL SIGUIENTE EVENTO COMENZARÁ EN:  </span>
-        <span class="time animated infinite bounceOut" id="tiempo-restante">01:45</span>
+        <span class="time animated infinite bounceOut" id="tiempo-restante">01:59</span>
         </div>
         <div style="display: flex;">
             <div id="competidores-container">
@@ -802,7 +787,72 @@ html, body {
 
 
 </div>
+<script>
+  window.carreraEnCurso = null; // ✅ Variable global
+</script>
+<script>
+function mostrarVideoCarrera() {
+    const carrera = window.carreraEnCurso; // Usamos variable global segura
+    if (!carrera || !carrera.video_path) {
+        console.error("No hay video para esta carrera.");
+        return;
+    }
+
+    // ⬇️ Sincronizar video en toda la app
+    sincronizarVideo(carrera.video_path);
+
+    const videoContainer = document.getElementById('video-container');
+    const videoPlayer = document.getElementById('video-player');
+
+    // ⬇️ Ocultar competidores, mostrar video en pantalla grande
+    document.getElementById('competidores-container').style.display = 'none';
+    videoContainer.classList.add('fullscreen-video-container');
+    videoContainer.style.display = 'flex';
+
+    // ⬇️ Cargar y reproducir localmente el video
+    videoPlayer.src = '/videos/' + carrera.video_path;
+    videoPlayer.muted = true;
+    videoPlayer.currentTime = 0;
+    videoPlayer.play();
+
+    // ⬇️ Animar circuito/vehículo si existen
+    const circuito = document.querySelector('.circuito-container');
+    const vehiculo = document.querySelector('.vehiculo');
+    if (circuito) circuito.style.opacity = 1;
+    if (vehiculo) vehiculo.style.opacity = 1;
+    window.tiempoInicio = performance.now();
+    requestAnimationFrame(animarVehiculo);
+
+    setTimeout(() => {
+        if (circuito) circuito.style.opacity = 0;
+        if (vehiculo) vehiculo.style.opacity = 0;
+    }, 2500);
+
+    // ⬇️ Evento cuando termina el video
+    videoPlayer.addEventListener('ended', () => {
+        videoContainer.classList.remove('fullscreen-video-container');
+        videoContainer.style.display = 'none';
+        mostrarGanadores(); // Ahora seguro está definida
+    });
+
+    // ⬇️ Click: pantalla completa
+    videoPlayer.addEventListener("click", function () {
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+            this.style.maxWidth = '640px';
+        } else {
+            if (this.requestFullscreen) this.requestFullscreen();
+            this.style.maxWidth = 'none';
+        }
+    });
+
+    window.mostrarVideoCarrera = mostrarVideoCarrera;
+}
+</script>
+
 <script src="/js/temporizador.js"></script>
+<script src="/js/carrera.js"></script>
+
 
 <script>
     let tiempoRestante = 0;     // segundos hasta que arranque la carrera
@@ -812,32 +862,35 @@ html, body {
 <script>
         const TemporizadorCompartido = {
         iniciarTemporizador: function () {
-            const tiempoRestanteElement = document.getElementById('tiempo-restante');
-            let tiempoObjetivo = parseInt(localStorage.getItem('horaObjetivo'), 10);
+        const tiempoObjetivo = parseInt(localStorage.getItem('horaObjetivo'), 10) || (Date.now() + 120000);
+        localStorage.setItem('horaObjetivo', tiempoObjetivo);
 
-            if (!tiempoObjetivo || isNaN(tiempoObjetivo)) {
-                tiempoObjetivo = Date.now() + 120000;
-                localStorage.setItem('horaObjetivo', tiempoObjetivo);
-            }
+        function actualizar() {
+        const ahora = Date.now();
+        const restante = Math.max(0, Math.floor((tiempoObjetivo - ahora) / 1000));
+        const detalle = { segundosRestantes: restante };
 
-            function actualizar() {
-                const ahora = Date.now();
-                const restante = Math.max(0, Math.floor((tiempoObjetivo - ahora) / 1000));
-                const min = String(Math.floor(restante / 60)).padStart(2, '0');
-                const seg = String(restante % 60).padStart(2, '0');
-                tiempoRestanteElement.textContent = `${min}:${seg}`;
+        // Emitir evento compartido
+        const tickEvent = new CustomEvent('tick-temporizador', { detail: detalle });
+        window.dispatchEvent(tickEvent);
 
-                if (restante === 90) window.dispatchEvent(new Event('hito-90s'));
-                if (restante === 0) {
-                    window.dispatchEvent(new Event('hito-0s'));
-                    clearInterval(intervalo);
-                }
-            }
-
-            actualizar();
-            const intervalo = setInterval(actualizar, 1000);
+        // Hitos especiales
+        if (restante === 90) window.dispatchEvent(new Event('hito-90s'));
+        if (restante === 0) {
+        window.dispatchEvent(new Event('hito-0s'));
+        clearInterval(intervalo);
         }
-    };
+         }
+
+        actualizar();
+        const intervalo = setInterval(actualizar, 1000);
+       }
+        };
+
+
+
+
+
 
     // === Eventos globales de tiempo ===
     window.addEventListener('hito-90s', () => {
@@ -864,8 +917,22 @@ html, body {
             if (vehiculo) vehiculo.style.opacity = 0;
         }, 2500);
     });
+    window.addEventListener('tick-temporizador', ({ detail }) => {
+        const t = detail.segundosRestantes;
+        const tiempoRestanteElement = document.getElementById('tiempo-restante');
+        if (tiempoRestanteElement) {
+            const min = String(Math.floor(t / 60)).padStart(2, '0');
+            const seg = String(t % 60).padStart(2, '0');
+            tiempoRestanteElement.textContent = `${min}:${seg}`;
+        }
+    });
+
+
+
 </script>
+    <script type="module" src="/js/videoSyncController.js"></script>
     <script>
+        
         document.addEventListener('DOMContentLoaded', function() {
             const proximasCarrerasLista = document.getElementById('proximas-carreras-lista');
             const competidoresLista = document.getElementById('competidores-lista');
@@ -875,43 +942,22 @@ html, body {
             const ganadoresLista = document.getElementById('ganadores-lista');
             const carrerasFinalizadasLista = document.getElementById('carreras-finalizadas-lista');
             let listaProximasCarreras = [];
-            let carreraEnCurso = null;
             let tiempoInicio = null;
             let temporizador = null;
             function obtenerDatosCarreras() {
                 fetch('/api/carreras/data')
-                    .then(response => response.json())
-                    .then(data => {
-                        const nuevasCarreras = data.proximas_carreras;
-                        console.log('Nuevas carreras recibidas:', nuevasCarreras);
-                        console.log('Lista de próximas carreras actual:', listaProximasCarreras);
-
-                        nuevasCarreras.forEach(nuevaCarrera => {
-                            const existe = listaProximasCarreras.some(carrera => carrera.carrera_id === nuevaCarrera.carrera_id);
-                            if (!existe) {
-                                listaProximasCarreras.push(nuevaCarrera);
-                                console.log('Añadiendo nueva carrera:', nuevaCarrera);
-                            }
-                        });
-
-                        // Filtrar la lista para mantener solo las carreras que aún están en la respuesta del backend
-                        listaProximasCarreras = listaProximasCarreras.filter(carreraExistente =>
-                            nuevasCarreras.some(nuevaCarrera => nuevaCarrera.carrera_id === carreraExistente.carrera_id)
-                        );
-
-                        renderProximasCarreras();
-                        console.log('Datos de carreras finalizadas recibidos:', data.carreras_finalizadas);
-                        renderCarrerasFinalizadas(data.carreras_finalizadas);
-
-                        if (listaProximasCarreras.length > 0 && !carreraEnCurso) {
-                            iniciarCarrera(listaProximasCarreras.shift());
-                        }
-                        console.log('Lista de próximas carreras después de actualización:', listaProximasCarreras);
-                    })
-                    .catch(error => {
-                        console.error('Error al obtener los datos de las carreras:', error);
-                    });
+                .then(response => response.json())
+                .then(data => {
+                    let nuevasCarreras = data.proximas_carreras || [];
+                    if (!window.carreraEnCurso && nuevasCarreras.length > 0) {
+                        iniciarCarrera(nuevasCarreras[0]);
+                    }
+                    listaProximasCarreras = nuevasCarreras;
+                    renderProximasCarreras();
+                    renderCarrerasFinalizadas(data.carreras_finalizadas);
+                });
             }
+
             function mostrarIdCarreraEnCurso(carreraId) {
                 const carreraIdElement = document.getElementById('carrera-en-curso-id');
                 if (carreraIdElement) {
@@ -923,34 +969,39 @@ html, body {
                     document.querySelector('div > h2').insertAdjacentElement('afterend', carreraIdParagraph);
                 }
             }
-            function renderProximasCarreras() {
-                const listaProximasCarrerasElement = document.getElementById('proximas-carreras-lista');
-                const siguienteCarreraTituloElement = document.getElementById('siguiente-carrera-titulo');
-                listaProximasCarrerasElement.innerHTML = '';
+        function renderProximasCarreras() {
+            const listaProximasCarrerasElement = document.getElementById('proximas-carreras-lista');
+            const siguienteCarreraTituloElement = document.getElementById('siguiente-carrera-titulo');
+            listaProximasCarrerasElement.innerHTML = '';
 
-                if (listaProximasCarreras.length > 0) {
-                    const siguienteCarrera = listaProximasCarreras[0];
-                    siguienteCarreraTituloElement.textContent = `Siguiente Carrera: ${siguienteCarrera.carrera_id} `;
-                    fetch(`/api/carreras/${siguienteCarrera.carrera_id}/detalles`)
-                        .then(response => response.json())
-                        .then(detallesCarrera => {
-                            if (detallesCarrera && detallesCarrera.pista && detallesCarrera.metros_pista) {
-                                siguienteCarreraTituloElement.textContent += 
-                                    `\nPista: ${detallesCarrera.pista}\nMetros: ${detallesCarrera.metros_pista}mts`;
-                            } else {
-                                console.warn(`Detalles inválidos para carrera ${siguienteCarrera.carrera_id}:`, detallesCarrera);
-                                siguienteCarreraTituloElement.textContent += `\n(No se pudieron obtener detalles de pista)`;
-                            }
-                        })
-                    listaProximasCarreras.forEach(carrera => {
-                        const listItem = document.createElement('li');
-                        listItem.textContent = `Carrera #${carrera.carrera_id}`;
-                        listaProximasCarrerasElement.appendChild(listItem);
+            if (listaProximasCarreras.length > 0) {
+                const siguienteCarrera = listaProximasCarreras[0];
+
+                // ⚠️ LIMPIA el campo antes
+                siguienteCarreraTituloElement.textContent = `Siguiente Carrera: ${siguienteCarrera.carrera_id}`;
+
+                // Obtén solo una vez los detalles y reemplaza el texto, no lo sumes
+                fetch(`/api/carreras/${siguienteCarrera.carrera_id}/detalles`)
+                    .then(response => response.json())
+                    .then(detallesCarrera => {
+                        if (detallesCarrera && detallesCarrera.pista && detallesCarrera.metros_pista) {
+                            // Usa salto de línea HTML si es necesario, o concatena como prefieras
+                            siguienteCarreraTituloElement.textContent = `Siguiente Carrera: ${siguienteCarrera.carrera_id} - Pista: ${detallesCarrera.pista} - Metros: ${detallesCarrera.metros_pista}mts`;
+                        } else {
+                            siguienteCarreraTituloElement.textContent = `Siguiente Carrera: ${siguienteCarrera.carrera_id} - (No se pudieron obtener detalles de pista)`;
+                        }
                     });
-                } else {
-                    siguienteCarreraTituloElement.textContent = 'No hay carreras programadas.';
-                }
+
+                // Lista de próximas carreras (en el ul/li que corresponda)
+                listaProximasCarreras.forEach(carrera => {
+                    const listItem = document.createElement('li');
+                    listItem.textContent = `Carrera #${carrera.carrera_id}`;
+                    listaProximasCarrerasElement.appendChild(listItem);
+                });
+            } else {
+                siguienteCarreraTituloElement.textContent = 'No hay carreras programadas.';
             }
+        }
             function renderCompetidores(carrera) {
             const competidoresLista = document.getElementById('competidores-lista');
             competidoresLista.innerHTML = '';
@@ -972,134 +1023,54 @@ html, body {
                 });
             }
         }
-
-       
-            // === Variables globales ===
-            let tiempoRestante = 120;
-
-            // === Funciones principales ===
-            function mostrarVideoCarrera() {
-                if (!carreraEnCurso || !carreraEnCurso.video_path) {
-                    console.error("No hay carrera en curso o falta video_path.");
-                    return;
-                }
-
-                const videoContainer = document.getElementById('video-container');
-                const videoPlayer = document.getElementById('video-player');
-
-                document.getElementById('competidores-container').style.display = 'none';
-                videoContainer.classList.add('fullscreen-video-container');
-                videoContainer.style.display = 'flex';
-                videoPlayer.src = '/videos/' + carreraEnCurso.video_path;
-                videoPlayer.muted = true;
-                videoPlayer.play();
-
-                videoPlayer.addEventListener('ended', () => {
-                    videoContainer.classList.remove('fullscreen-video-container');
-                    videoContainer.style.display = 'none';
-                    mostrarGanadores();
-                });
-
-                videoPlayer.addEventListener("click", function () {
-                    if (document.fullscreenElement) {
-                        document.exitFullscreen();
-                        this.style.maxWidth = '640px';
-                    } else {
-                        if (this.requestFullscreen) this.requestFullscreen();
-                        this.style.maxWidth = 'none';
-                    }
-                });
-            }
-
-
+        let tiempoRestante = 120;
         function iniciarCarrera(carrera) {
-            console.log('Iniciando carrera:', carrera);
-            carreraEnCurso = carrera;
-            cargarDatosCompetidores(carrera);
-
-            // Asegurarse de que estén invisibles al inicio
+    window.carreraEnCurso = carrera;
+    // Quita la carrera actual de la lista solo aquí:
+    listaProximasCarreras = listaProximasCarreras.filter(c => c.carrera_id !== carrera.carrera_id);
+            // Ocultar elementos visuales al inicio
             const circuito = document.querySelector('.circuito-container');
             const vehiculo = document.querySelector('.vehiculo');
-            if (circuito) {
-                circuito.style.opacity = 0;
-            }
-            if (vehiculo) {
-                vehiculo.style.opacity = 0;
-            }
+            if (circuito) circuito.style.opacity = 0;
+            if (vehiculo) vehiculo.style.opacity = 0;
 
             renderCompetidores(carreraEnCurso);
             mostrarCardsConAnimacion(carrera.participantes);
-            videoContainer.style.display = 'none';
-            ganadoresContainer.style.display = 'none';
+
+            document.getElementById('video-container').style.display = 'none';
+            document.getElementById('ganadores-container').style.display = 'none';
             document.getElementById('competidores-container').style.display = 'block';
             document.getElementById('temporizador-container').style.display = 'block';
+
             const tiempoRestanteElement = document.getElementById('tiempo-restante');
-            const horaObjetivo = Date.now() + 120 * 1000;
-            localStorage.setItem('horaObjetivo', horaObjetivo);
-            TemporizadorCompartido.iniciarTemporizador(); // Cambia a 120 para la duración real
-            document.getElementById('competidores-container').style.display = 'block';
+            tiempoRestante = 120;
+            localStorage.setItem('horaObjetivo', Date.now() + 120 * 1000);
+            TemporizadorCompartido.iniciarTemporizador();
+
             function actualizarTiempoVisual(totalSegundos) {
                 const minutos = Math.floor(totalSegundos / 60);
                 const segundos = totalSegundos % 60;
-                const minutosFormateados = minutos < 10 ? `0${minutos}` : minutos;
-                const segundosFormateados = segundos < 10 ? `0${segundos}` : segundos;
-                tiempoRestanteElement.textContent = `${minutosFormateados}:${segundosFormateados}`;
+                tiempoRestanteElement.textContent =
+                    `${minutos.toString().padStart(2, '0')}:${segundos.toString().padStart(2, '0')}`;
             }
 
-            actualizarTiempoVisual(tiempoRestante); // Mostrar el tiempo inicial
+    actualizarTiempoVisual(tiempoRestante);
 
-            if (temporizador) {
-                clearInterval(temporizador);
-            }
-            temporizador = setInterval(() => {
-            tiempoRestante--;
-                actualizarTiempoVisual(tiempoRestante);
+    if (temporizador) clearInterval(temporizador);
 
-                // --- NUEVO BLOQUE ---
-                if (tiempoRestante === 90) {        // ⇦ momento del cambio
-                document.getElementById('competidores-container')
-                        document.getElementById('competidores-container').style.display = 'none';
-
-                document.getElementById('tabla-probabilidades-container')
-                        .classList.add('expandir-flex');
-
-                document.getElementById('tabla-probabilidades')
-                        .classList.add('expandir-flex');
-                }
-
-            actualizarTiempoVisual(tiempoRestante);
-            console.log(`Tiempo restante para la carrera ${carreraEnCurso.carrera_id}: ${tiempoRestante}`);
-            if (tiempoRestante < 0) {
-                clearInterval(temporizador);
-                document.getElementById('temporizador-container').style.display = 'none';
-                mostrarVideoCarrera();
-
-                // HACER VISIBLE LA PISTA Y EL VEHÍCULO AL INICIAR EL VIDEO
-                const circuito = document.querySelector('.circuito-container');
-                const vehiculo = document.querySelector('.vehiculo');
-                if (circuito) {
-                    circuito.style.opacity = 1;
-                }
-                if (vehiculo) {
-                    vehiculo.style.opacity = 1;
-                }
-
-                // Iniciar la animación del vehículo AL INICIAR EL VIDEO
-                tiempoInicio = performance.now();
-                requestAnimationFrame(animarVehiculo);
-
-                // Establecer un temporizador para ocultar la pista después de 35 segundos
-                setTimeout(() => {
-                    if (circuito) {
-                        circuito.style.opacity = 0;
-                    }
-                    if (vehiculo) {
-                        vehiculo.style.opacity = 0;
-                    }
-                }, 2500);
-            }
-        }, 1000);
-        }
+    fetch(`/api/carreras/${carrera.carrera_id}/detalles`)
+        .then(res => res.json())
+        .then(detalles => {
+            carrera.pista = detalles.pista || 'N/D';
+            carrera.metros_pista = detalles.metros_pista || 'N/D';
+            CarreraCompartida.establecerCarrera(carrera);
+            console.log('✅ Carrera establecida para compartir:', carrera);
+        })
+        .catch(err => {
+            console.warn('⚠️ No se pudieron obtener detalles de la carrera:', err);
+            CarreraCompartida.establecerCarrera(carrera); // Igual la establecemos con lo que haya
+        });
+}
 
 
             function renderProximasCarrerasListaIzquierda() {
@@ -1126,58 +1097,75 @@ html, body {
             let carreraFinalizadaGuardada = false; // <--- Declara la variable aquí
 
 
-            function mostrarGanadores() {
-                console.log('Función mostrarGanadores() llamada');
-                videoContainer.style.display = 'none';
-                ganadoresContainer.style.display = 'block';
-                ganadoresLista.innerHTML = '';
+        function mostrarGanadores() {
+            console.log('Función mostrarGanadores() llamada');
 
-                if (carreraEnCurso && carreraEnCurso.participantes) {
-                    const ganadoresOrdenados = carreraEnCurso.participantes.sort((a, b) => parseInt(a.posicion_llegada) - parseInt(b.posicion_llegada));
+            // Asegúrate de obtener elementos globales:
+            const videoContainer = document.getElementById('video-container');
+            const ganadoresContainer = document.getElementById('ganadores-container');
+            const ganadoresLista = document.getElementById('ganadores-lista');
 
-                    const primerLugar = ganadoresOrdenados[0]?.nombre || null;
-                    const segundoLugar = ganadoresOrdenados[1]?.nombre || null;
-                    const tercerLugar = ganadoresOrdenados[2]?.nombre || null;
+            videoContainer.style.display = 'none';
+            ganadoresContainer.style.display = 'block';
+            ganadoresLista.innerHTML = '';
 
-                    fetch('/api/carreras/guardar-finalizada', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-                        },
-                        body: JSON.stringify({
-                            carrera_id: carreraEnCurso.carrera_id,
-                            ganador_posicion_1: primerLugar,
-                            ganador_posicion_2: segundoLugar,
-                            ganador_posicion_3: tercerLugar,
-                        })
+            // Usa la variable global correctamente
+            const carrera = window.carreraEnCurso;
+
+            if (carrera && carrera.participantes) {
+                const ganadoresOrdenados = carrera.participantes.sort(
+                    (a, b) => parseInt(a.posicion_llegada) - parseInt(b.posicion_llegada)
+                );
+
+                const primerLugar = ganadoresOrdenados[0]?.nombre || null;
+                const segundoLugar = ganadoresOrdenados[1]?.nombre || null;
+                const tercerLugar = ganadoresOrdenados[2]?.nombre || null;
+
+                fetch('/api/carreras/guardar-finalizada', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    },
+                    body: JSON.stringify({
+                        carrera_id: carrera.carrera_id,
+                        ganador_posicion_1: primerLugar,
+                        ganador_posicion_2: segundoLugar,
+                        ganador_posicion_3: tercerLugar,
                     })
-                    .then(response => {
-                        if (!response.ok) {
-                            if (response.status === 409) {
-                                console.log('La información de esta carrera ya ha sido guardada anteriormente.');
-                                return;
-                            }
-                            throw new Error(`Error en la petición: ${response.status}`);
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        if (response.status === 409) {
+                            console.log('La información de esta carrera ya ha sido guardada anteriormente.');
+                            return;
                         }
-                        return response.json();
-                    })
-                    .then(data => {
-                        console.log('Información de carrera finalizada guardada:', data);
-                        obtenerDatosCarreras(); // Volver a obtener los datos para actualizar la lista
-                    })
-                    .catch(error => {
-                        console.error('Error al guardar la carrera finalizada:', error);
-                    });
-                }
-
+                        throw new Error(`Error en la petición: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Información de carrera finalizada guardada:', data);
+                    // Actualizar lista de carreras
+                    if (typeof obtenerDatosCarreras === 'function') {
+                        obtenerDatosCarreras();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error al guardar la carrera finalizada:', error);
+                });
+            }
                 setTimeout(() => {
                     ganadoresContainer.style.display = 'none';
                     videoContainer.style.display = 'none';
-                    carreraEnCurso = null;
-                    window.location.reload();
+                    document.getElementById('temporizador-container').style.display = 'block';
+                    // NO hagas window.carreraEnCurso = null aquí!
+
+                    obtenerDatosCarreras(); // Y que tu lógica de backend mande la próxima carrera disponible
                 }, 5000);
-            }
+
+        }
+        window.mostrarGanadores = mostrarGanadores;
             function enviarCarreraFinalizada(carreraId, ganadores) {
                 console.log('Enviando carrera finalizada para ID:', carreraId);
                 fetch('/carreras/finalizada', {
@@ -1243,22 +1231,27 @@ html, body {
         obtenerDatosCarreras();
         //setInterval(obtenerDatosCarreras, 5000);
     });
-    function renderCarrerasFinalizadas(carrerasFinalizadas) {
-        const listaFinalizadas = document.getElementById('carreras-finalizadas-lista');
-        listaFinalizadas.innerHTML = ''; // Limpiar lista antes de renderizar
+        function renderCarrerasFinalizadas(carrerasFinalizadas) {
+            const carrerasFinalizadasLista = document.getElementById('carreras-finalizadas-lista');
+            carrerasFinalizadasLista.innerHTML = ''; // Limpia la lista
 
-        // Evita agregar duplicados si vienen varias veces
-        const idsAgregados = new Set();
+            // Usa un Set para evitar duplicados por ID de carrera
+            const idsAgregados = new Set();
+            // Solo mostrar las últimas 5 finalizadas con datos válidos, sin duplicar
+            (carrerasFinalizadas
+                .filter(carrera => carrera.ganador_posicion_1 !== null)
+                .sort((a, b) => new Date(b.fecha_finalizacion) - new Date(a.fecha_finalizacion))
+                .forEach(carrera => {
+                    if (!idsAgregados.has(carrera.carrera_id)) {
+                        const listItem = document.createElement('li');
+                        listItem.textContent = `Carrera #${carrera.carrera_id} - Ganador: ${carrera.ganador_posicion_1 ?? 'N/D'}`;
+                        carrerasFinalizadasLista.appendChild(listItem);
+                        idsAgregados.add(carrera.carrera_id);
+                    }
+                })
+            );
+        }
 
-        carrerasFinalizadas.forEach(carrera => {
-            if (!idsAgregados.has(carrera.carrera_id)) {
-                const listItem = document.createElement('li');
-                listItem.textContent = `Carrera #${carrera.carrera_id}`;
-                listaFinalizadas.appendChild(listItem);
-                idsAgregados.add(carrera.carrera_id);
-            }
-        });
-    }
 
     </script>
     <script>
@@ -1492,13 +1485,6 @@ cards.forEach((card, index) => {
     rotarSiguiente();
   });
 </script>
-
-
-
-<script>
-
-</script>
-
 
 </body>
 </html>
